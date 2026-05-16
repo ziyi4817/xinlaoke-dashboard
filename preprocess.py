@@ -91,14 +91,14 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].astype(str).str.strip().replace({"nan": "未知", "": "未知"})
         else:
             df[col] = "未知"
-    # 达人昵称单独处理：空值标记为"未知渠道"
+    # 达人昵称单独处理：空值标记为"货架"
     if "influencer_name" in df.columns:
         df["influencer_name"] = (
             df["influencer_name"].astype(str).str.strip()
-            .replace({"nan": "未知渠道", "": "未知渠道"})
+            .replace({"nan": "货架", "": "货架"})
         )
     else:
-        df["influencer_name"] = "未知渠道"
+        df["influencer_name"] = "货架"
 
     # ── 时间衍生字段 ──
     df["order_date"] = df["pay_time"].dt.date
