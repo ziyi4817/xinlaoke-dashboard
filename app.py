@@ -29,8 +29,10 @@ def load_orders() -> pd.DataFrame:
 @st.cache_data
 def load_pairs() -> pd.DataFrame:
     p = pd.read_parquet("data/processed/purchase_pairs.parquet")
-    p["from_date"] = pd.to_datetime(p["from_date"])
-    p["to_date"]   = pd.to_datetime(p["to_date"])
+    p["from_date"] = pd.to_datetime(p["from_date"], errors="coerce")
+    p["to_date"]   = pd.to_datetime(p["to_date"],   errors="coerce")
+    p["from_rank"] = p["from_rank"].fillna(0).astype(int)
+    p["to_rank"]   = p["to_rank"].fillna(0).astype(int)
     return p
 
 
@@ -302,7 +304,7 @@ def tab_product(df: pd.DataFrame):
             x=display_total["total"],
             orientation="h",
             marker_color="#6C8EBF",
-            text=display_total["total"].round(0 if use_gmv else None),
+            text=display_total["total"].round(0) if use_gmv else display_total["total"].astype(int),
             textposition="outside",
         ))
         fig2.update_layout(
@@ -324,6 +326,10 @@ def tab_repurchase_cycle(df: pd.DataFrame, pairs: pd.DataFrame):
     user_ids = set(df[df["customer_type"] == "老客"]["user_id"].unique())
     p = pairs[pairs["user_id"].isin(user_ids)].copy()
 
+    if p.empty:
+        st.info("当前筛选条件下没有老客复购记录，请扩大时间范围或渠道范围")
+        return
+
     dim       = st.radio("分析维度", ["渠道 → 渠道", "货号 → 货号"], horizontal=True, key="cycle_dim")
     min_count = st.slider("最少转换次数（去除噪音）", 1, 100, 5, key="cycle_min")
 
@@ -342,14 +348,16 @@ def tab_repurchase_cycle(df: pd.DataFrame, pairs: pd.DataFrame):
         return
 
     pivot = cycle.pivot(index=from_col, columns=to_col, values="avg_days").round(1)
+    # 将 NaN 替换为空字符串显示
+    text_annot = [[f"{v:.0f}天" if pd.notna(v) else "" for v in row] for row in pivot.values]
 
     fig = go.Figure(go.Heatmap(
         z=pivot.values,
         x=pivot.columns.tolist(),
         y=pivot.index.tolist(),
         colorscale="Blues",
-        text=pivot.values,
-        texttemplate="%{text:.0f}天",
+        text=text_annot,
+        texttemplate="%{text}",
         hovertemplate="从 %{y}<br>→ %{x}<br>平均 %{z:.0f} 天<extra></extra>",
         colorbar=dict(title="天数"),
     ))
@@ -488,8 +496,8 @@ def tab_channel_flow(df: pd.DataFrame, pairs: pd.DataFrame):
 
     p = p[p["from_rank"] <= max_rank - 1]
 
-    p["source"] = "第" + p["from_rank"].astype(str) + "次\n" + p["from_influencer"]
-    p["target"] = "第" + p["to_rank"].astype(str).str.replace(".0", "", regex=False) + "次\n" + p["to_influencer"]
+    p["source"] = "第" + p["from_rank"].astype(int).astype(str) + "次\n" + p["from_influencer"]
+    p["target"] = "第" + p["to_rank"].fillna(0).astype(int).astype(str) + "次\n" + p["to_influencer"]
 
     flow = p.groupby(["source", "target"]).size().reset_index(name="count")
     flow = flow[flow["count"] >= min_count]
